@@ -74,7 +74,7 @@ jobs:
           retention-days: 30
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -92,7 +92,22 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/* --verify-tag \
-            --title "Open TJ $RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md
+          VERSION="$(tr -d '\n' < VERSION)"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            TITLE="Open TJ $TAG"
+            KIND=(--verify-tag)
+          else
+            TAG="v$VERSION-main.$SHORT_SHA"
+            TITLE="Open TJ $VERSION (main $SHORT_SHA)"
+            KIND=(--target "$GITHUB_SHA" --prerelease)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes-file docs/RELEASE_NOTES.md
+          else
+            gh release create "$TAG" dist/* "${KIND[@]}" \
+              --title "$TITLE" --notes-file docs/RELEASE_NOTES.md
+          fi

@@ -1,19 +1,18 @@
 # 变更记录
 
-## 未发布
+## 0.3.0
 
 - macOS 客户端改用 Go + MyGo 原生 UI 重写，移除 SwiftUI 与 stdin/stdout JSON
   事件协议，后端与界面合并为单一 Go 程序。
-- 拆分为 `internal/client`、`internal/vpn`、`internal/app`、`internal/settings`、
-  `internal/credentials`、`internal/logging`，新增视图与状态机单元测试。
+- 拆分为 `client`、`vpn`、`app`、`settings`、`credentials`、`logging` 包，
+  新增视图与状态机单元测试。
 - 菜单栏面板改为 MyGo flyout，新增托盘速率标题；配置、凭据、日志路径保持兼容。
-- 构建与 CI 改为 `go tool mygo build -platform darwin/universal`，不再需要
-  Swift 工具链。
 - 修复 `host_network_modified` 未记录，导致网关断线后不重试、网络恢复结果误报。
 - 管理员授权与 utun 配置期间保持网关心跳，避免慢授权导致会话被回收。
 - 网关主动终止会话时不再无限重连，并按原因码给出可操作的提示。
 - CI 并行构建 macOS、Windows、Linux 的 arm64/amd64 六个产物并随 Release 发布；
-  Windows/Linux 版本目前仅用于界面预览，连接仍限 macOS。
+  push 到 main 自动发布 `v<版本>-main.<sha>` 预发布，标签发布正式版本。
+- Windows/Linux 版本目前仅用于界面预览，连接仍限 macOS。
 
 ## Android 0.2.1（预览版）
 
