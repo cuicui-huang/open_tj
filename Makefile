@@ -1,4 +1,8 @@
-.PHONY: build test package release android android-test android-release android-sign
+.PHONY: dev build build-all test package release android android-test android-release android-sign
+dev:
+	cd apps/desktop && go tool mygo dev
+build-all:
+	bash scripts/build-all.sh
 build:
 	bash scripts/build.sh
 test:

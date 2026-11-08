@@ -8,7 +8,7 @@ import (
 )
 
 func TestSharedAndroidProtocolVectors(t *testing.T) {
-	data, err := os.ReadFile("../../../testdata/vpn-protocol.json")
+	data, err := os.ReadFile("../../../../testdata/vpn-protocol.json")
 	if err != nil {
 		t.Fatal(err)
 	}

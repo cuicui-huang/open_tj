@@ -11,11 +11,17 @@ bash scripts/package.sh
 VERSION="$(tr -d '\n' < VERSION)"
 LABEL="$(echo "$ARCHS" | tr ' ' '-')"
 ZIP="dist/OpenTJ-$VERSION-$LABEL.zip"
+case "$ARCHS" in
+  "arm64 x86_64"|"x86_64 arm64") TARGET=darwin-universal ;;
+  arm64) TARGET=darwin-arm64 ;;
+  x86_64) TARGET=darwin-amd64 ;;
+esac
+APP="build/$TARGET/Open TJ.app"
 xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
-xcrun stapler staple 'build/Open TJ.app'
-xcrun stapler validate 'build/Open TJ.app'
-spctl --assess --type execute --verbose=2 'build/Open TJ.app'
+xcrun stapler staple "$APP"
+xcrun stapler validate "$APP"
+spctl --assess --type execute --verbose=2 "$APP"
 rm -f "$ZIP"
-ditto -c -k --sequesterRsrc --keepParent 'build/Open TJ.app' "$ZIP"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 shasum -a 256 "$ZIP" > "$ZIP.sha256"
 echo "Notarized release: $ZIP"

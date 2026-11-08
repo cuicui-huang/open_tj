@@ -32,7 +32,7 @@ release 会先执行测试，构建双架构 app，从内到外使用 Hardened R
 
 远程仓库为 https://github.com/cuicui-huang/open_tj，默认 main 分支。推送 main 或手动触发 Actions 会生成可下载的构建产物。修改 VERSION 并提交后，推送对应标签（例如 git tag v0.2.0，再 git push origin v0.2.0），Actions 会测试、构建并创建含 ZIP 与 SHA-256 的 Release。标签必须与 VERSION 一致。
 
-GitHub Actions 使用 macos-26 runner，在 push/PR 时测试并生成 ad-hoc 双架构包；版本标签触发自动 Release，无需分发证书。普通构建产物保留 30 天；Release 附件可持续下载。公开 Release 附件无需登录即可下载。正式 Developer ID 签名与 Apple 公证仍使用上文的 make release 流程。
+GitHub Actions 使用 macos-26 runner，在 push/PR 时测试并并行构建六个目标：macOS、Windows、Linux 的 arm64 与 amd64。每个目标上传独立 artifact；版本标签触发自动 Release，汇总所有平台产物。macOS 包为 ad-hoc 签名，Windows 目前提供免安装 `.exe`，Linux 提供 `.deb` 与 `.tar.gz`。普通构建产物保留 30 天；Release 附件可持续下载。正式 Developer ID 签名与 Apple 公证仍使用上文的 make release 流程。
 
 ## Android 签名准备
 

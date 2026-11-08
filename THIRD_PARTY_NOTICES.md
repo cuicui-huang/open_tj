@@ -1,13 +1,20 @@
 # Third-party notices
 
-Open TJ 的 Go 后端运行依赖如下；版本以 backend/go.mod 和 go.sum 为准。
+Open TJ 的 macOS 客户端运行依赖如下；版本以 apps/desktop/go.mod 和 go.sum 为准。
 
 | Dependency | License | Included license |
 | --- | --- | --- |
+| github.com/egoist/mygo (native UI, windowing, packaging) | MIT | licenses/mygo-LICENSE.txt |
 | golang.zx2c4.com/wireguard (tun package) | MIT | licenses/wireguard-LICENSE.txt |
+| github.com/ebitengine/purego | MIT | licenses/purego-LICENSE.txt |
+| github.com/go-text/typesetting | MIT | licenses/go-text-typesetting-LICENSE.txt |
 | golang.org/x/sys | BSD-3-Clause | licenses/x-sys-LICENSE.txt |
+| golang.org/x/text | BSD-3-Clause | licenses/x-text-LICENSE.txt |
+| golang.org/x/image | BSD-3-Clause | licenses/x-image-LICENSE.txt |
+| golang.org/x/net | BSD-3-Clause | licenses/x-net-LICENSE.txt |
+| golang.zx2c4.com/wintun (Windows tun) | MIT | licenses/wintun-LICENSE.txt |
 
-应用不使用 WireGuard 隧道协议。旧 Python 代理依赖的 gVisor 未进入当前发行目标。Go 编译器运行库的许可证见 licenses/go-LICENSE.txt。上述许可证随 app 的 Contents/Resources 一同分发。
+应用不使用 WireGuard 隧道协议。旧 Python 代理依赖的 gVisor 未进入当前发行目标。Go 编译器运行库的许可证见 licenses/go-LICENSE.txt。上述许可证随 app 的 Contents/Resources 一同分发（`resources` 配置会把 `licenses` 复制进应用包）。
 
 本项目采用 MIT 许可证，见根目录 LICENSE。第三方组件仍遵循各自许可证。
 

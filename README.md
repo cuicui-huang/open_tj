@@ -3,6 +3,7 @@
 <img src="assets/logo.png" alt="Open TJ" width="128">
 
 同济校园 VPN 原生客户端，支持 macOS 和 Android、流量统计和自动重连。
+macOS 客户端使用 Go 与 [MyGo](https://github.com/egoist/mygo) 原生 UI 实现，不依赖 Swift 或 WebView。
 
 本项目 100% 由 **gpt6-astra** 开发。
 
@@ -29,9 +30,14 @@ macOS 构建尚未经 Apple 公证。如被系统拦截，尝试打开后，到�
 ## 项目目录
 
 ```text
+apps/desktop/         Go + MyGo 原生 macOS 客户端
+  main.go             入口、菜单栏、生命周期
+  internal/app/       状态机、窗口与面板视图
+  internal/vpn/       登录、隧道、重连监督器
+  internal/client/    网关协议、helper、路由与诊断
+  internal/…          凭据、偏好、日志
+  mygo.json           应用名、标识、版本与打包配置
 apps/android/         Kotlin/Compose 客户端、协议模块、Android VERSION
-apps/macos/           SwiftUI 客户端
-backend/              macOS 使用的 Go 后端
 testdata/             Go/Kotlin 共用协议样例
 scripts/              本地与 CI 共用的测试、构建、签名脚本
 docs/                 架构、开发与发布验收说明
@@ -41,11 +47,28 @@ build/、dist/         本地工具链与产物，不提交 Git
 
 ## 开发构建
 
+macOS 需要 Go 1.27 或更高版本；MyGo 作为 Go 工具固定在 `apps/desktop/go.mod`，
+无需额外安装。开发时可直接运行：
+
 ```sh
-make test
-make build
-make package
+cd apps/desktop
+go tool mygo dev      # 编辑 .go 文件后自动重启
 ```
+
+��整测试、构建与打包：
+
+```sh
+make test             # go test -race ./... + go vet ./...
+make build            # 当前架构的 .app
+make build-all        # 六个目标：macOS/Windows/Linux × arm64/amd64
+make package          # macOS 双架构 Universal ZIP 到 dist/
+```
+
+`make build` 可通过 `ARCHS="arm64 x86_64"` 构建 Universal，`SIGN_IDENTITY` 指定
+Developer ID 时由 MyGo 完成签名。
+
+macOS 客户端不使用 Swift、Xcode 或 WebView；界面由 MyGo 在 Metal 上绘制。
+Windows/Linux 版本可以编译和启动界面，但 VPN 连接目前仅支持 macOS。
 
 Android（需要 JDK 17 和 Android SDK）：
 

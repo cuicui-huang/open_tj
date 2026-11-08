@@ -1,0 +1,17 @@
+{
+  "name": "Open TJ",
+  "slug": "open-tj",
+  "identifier": "local.motionvpn.prototype",
+  "version": "0.2.1",
+  "copyright": "© Open TJ contributors",
+  "license": "MIT",
+  "out": "../../build",
+  "macos": {
+    "minimumSystemVersion": "14.0"
+  },
+  "resources": [
+    "../../licenses",
+    "../../LICENSE",
+    "../../THIRD_PARTY_NOTICES.md"
+  ]
+}

@@ -11,6 +11,17 @@ import (
 	"time"
 )
 
+// GatewayClosedError reports that the gateway ended the session itself. A
+// reason of 1 means a newer login preempted this one; 8 is a generic
+// rejection. See docs/protocol.md of tj-tunnel for observed values.
+type GatewayClosedError struct {
+	Reason uint32
+}
+
+func (e *GatewayClosedError) Error() string {
+	return fmt.Sprintf("网关终止会话，原因码 %d", e.Reason)
+}
+
 type BridgeStats struct {
 	UploadBytes   atomic.Int64
 	DownloadBytes atomic.Int64
@@ -104,7 +115,7 @@ func Bridge(ctx context.Context, gateway net.Conn, reader io.Reader, helper net.
 						}
 					}
 				case 2:
-					return fmt.Errorf("网关终止会话，原因码 %d", binary.BigEndian.Uint32(p[16:]))
+					return &GatewayClosedError{Reason: binary.BigEndian.Uint32(p[16:])}
 				case 4:
 					if !send(out, ATP(5, 0)) {
 						return ctx.Err()

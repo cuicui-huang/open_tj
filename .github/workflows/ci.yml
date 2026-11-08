@@ -8,49 +8,71 @@ on:
 permissions:
   contents: read
 jobs:
-  build:
+  test:
     runs-on: macos-26
     timeout-minutes: 20
-    env:
-      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - name: Check release version
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: test "$RELEASE_TAG" = "v$(tr -d '\n' < VERSION)"
+          go-version-file: apps/desktop/go.mod
+          cache-dependency-path: apps/desktop/go.sum
+      - name: Check versions agree
+        run: |
+          test "$(python3 -c 'import json;print(json.load(open("apps/desktop/mygo.json"))["version"])')" = "$(tr -d '\n' < VERSION)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "v$(tr -d '\n' < VERSION)"
+          fi
       - name: Test
         run: make test
-      - name: Build Universal app with icon
-        run: make package
-      - name: Verify package
+
+  build:
+    needs: test
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin/arm64
+            dir: darwin-arm64
+          - platform: darwin/amd64
+            dir: darwin-amd64
+          - platform: windows/arm64
+            dir: windows-arm64
+          - platform: windows/amd64
+            dir: windows-amd64
+          - platform: linux/arm64
+            dir: linux-arm64
+          - platform: linux/amd64
+            dir: linux-amd64
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: apps/desktop/go.mod
+          cache-dependency-path: apps/desktop/go.sum
+      - name: Build
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          shasum -a 256 -c dist/*.sha256
-          codesign --verify --deep --strict 'build/Open TJ.app'
-          for binary in 'build/Open TJ.app/Contents/MacOS/OpenTJ' 'build/Open TJ.app/Contents/Resources/motionvpn'; do
-            archs="$(lipo -archs "$binary")"
-            [[ " $archs " == *' arm64 '* && " $archs " == *' x86_64 '* ]]
-          done
-          test -s 'build/Open TJ.app/Contents/Resources/OpenTJ.icns'
+          cd apps/desktop
+          args=(-platform "$PLATFORM")
+          case "$PLATFORM" in
+            windows/*) args+=(-skip-installer) ;;
+          esac
+          go tool mygo build "${args[@]}"
+      - name: Collect artifacts
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: bash scripts/ci-collect.sh "$PLATFORM"
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: OpenTJ-macOS-Universal
-          path: dist/
+          name: OpenTJ-${{ matrix.dir }}
+          path: dist/${{ matrix.dir }}
           if-no-files-found: error
           retention-days: 30
-      - name: Verify artifact download
-        uses: actions/download-artifact@v8.0.2
-        with:
-          name: OpenTJ-macOS-Universal
-          path: build/artifact-check/dist
-      - name: Verify downloaded checksum
-        working-directory: build/artifact-check
-        run: shasum -a 256 -c dist/*.sha256
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
     needs: build
@@ -61,11 +83,16 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: OpenTJ-macOS-Universal
+          pattern: OpenTJ-*
           path: dist
+          merge-multiple: true
+      - name: Verify downloaded checksums
+        working-directory: dist
+        run: sha256sum -c SHA256SUMS-*
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --title "Open TJ $RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md
+          gh release create "$RELEASE_TAG" dist/* --verify-tag \
+            --title "Open TJ $RELEASE_TAG" --notes-file docs/RELEASE_NOTES.md

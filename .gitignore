@@ -40,3 +40,8 @@ __pycache__/
 *.idsig
 *.jks.base64
 *.keystore.base64
+
+# MyGo development builds and generated files
+/apps/desktop/.mygo/
+/apps/desktop/build/
+mygo_windows_*.syso
