@@ -25,6 +25,12 @@ jobs:
           fi
       - name: Test
         run: make test
+      - name: Cross-platform vet
+        run: |
+          cd apps/desktop
+          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" go vet ./...
+          done
 
   build:
     needs: test

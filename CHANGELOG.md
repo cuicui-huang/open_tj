@@ -1,5 +1,17 @@
 # 变更记录
 
+## 0.4.0
+
+- 新增 Windows 10/11 连接支持：Wintun 网卡、UAC 提权、路由/DNS/代理/IPv6
+  设置与回滚，使用与 macOS 相同的网关协议与心跳。
+- helper 通信按平台拆分：macOS 使用 Unix socket + osascript，Windows 使用
+  本地回环 TCP + ShellExecute `runas`，两端都用随机令牌握手。
+- Windows 包内置 `wintun.dll`（amd64/arm64），需要管理员权限；当前为未签名
+  免安装 exe，SmartScreen 可能提示。
+- Linux 继续提供界面预览，连接仍不可用。
+- 网络层拆为 `network_darwin.go` / `network_windows.go` / `network_linux.go`，
+  监督器不再直接调用 macOS 命令。
+
 ## 0.3.0
 
 - macOS 客户端改用 Go + MyGo 原生 UI 重写，移除 SwiftUI 与 stdin/stdout JSON

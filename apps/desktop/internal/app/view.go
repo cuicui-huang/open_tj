@@ -217,7 +217,7 @@ func (c *Controller) viewConnectFooter(ctx *ui.Context) {
 			}
 			unsupported := !vpn.Supported()
 			if unsupported {
-				label = "仅 macOS 支持连接"
+				label = "仅桌面版支持连接"
 			}
 			button := ui.PrimaryButton(ctx.Key("connect"), label).
 				Disabled(unsupported || c.Stopping() || strings.TrimSpace(c.account.Username) == "" || c.account.Password == "")
@@ -230,7 +230,7 @@ func (c *Controller) viewConnectFooter(ctx *ui.Context) {
 			message = "请稍候，正在恢复网络设置"
 		}
 		if !vpn.Supported() {
-			message = "此构建用于界面预览，VPN 连接目前只支持 macOS。"
+			message = "此构建用于界面预览，VPN 连接目前只支持 macOS 和 Windows。"
 		}
 		ui.Text(ctx, message).FontSize(11).TextColor(t.TextMuted)
 	})

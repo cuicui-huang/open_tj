@@ -302,7 +302,7 @@ func (c *Controller) Connect() bool {
 	}
 	if !vpn.Supported() {
 		c.status = "暂不可用"
-		c.detail = "当前平台的版本仅用于界面预览；VPN 连接目前只支持 macOS。"
+		c.detail = "当前平台的版本仅用于界面预览；VPN 连接目前只支持 macOS 和 Windows。"
 		c.addLog("warning", "app", c.detail)
 		c.redraw()
 		return false

@@ -10,15 +10,11 @@ package vpn
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -203,32 +199,20 @@ func (s *Supervisor) tunnel(ctx context.Context, session *client.Session) SiteRe
 		return fail(err)
 	}
 	gatewayAddress, _, _ := net.SplitHostPort(session.Conn.RemoteAddr().String())
-	route, err := client.SystemRun("/sbin/route", "-n", "get", gatewayAddress)
-	if err != nil {
-		return fail(err)
-	}
-	before := client.RouteFields(route)
-	if !strings.HasPrefix(before["interface"], "en") {
-		return fail(fmt.Errorf("网关出口不是物理网络，请先停用其他全局 VPN"))
-	}
-	service, err := client.ActiveService(client.SystemRun, before["interface"])
-	if err != nil {
-		return fail(err)
-	}
-	snapshot, err := client.TakeSnapshot(client.SystemRun, service)
+	info, err := client.Inspect(client.SystemRun, gatewayAddress)
 	if err != nil {
 		return fail(err)
 	}
 	s.reporter.Log("info", "network",
-		fmt.Sprintf("网络预检完成 · 服务 %s · 出口 %s · VPN DNS %d 个", service, before["interface"], len(dns)))
+		fmt.Sprintf("网络预检完成 · 服务 %s · 出口 %s · VPN DNS %d 个", info.Service, info.Interface, len(dns)))
 
 	cfg := client.NetworkConfig{
 		IP:        ip,
 		DNS:       dns,
 		Gateway:   gatewayAddress,
-		Router:    before["gateway"],
-		Interface: before["interface"],
-		Before:    snapshot,
+		Router:    info.Router,
+		Interface: info.Interface,
+		Before:    info.Before,
 	}
 
 	// Keep the gateway session alive while the administrator authorizes the
@@ -240,14 +224,14 @@ func (s *Supervisor) tunnel(ctx context.Context, session *client.Session) SiteRe
 	helper, finish, err := s.startHelper(ctx, cfg,
 		func() { site.HostNetworkModified = true },
 		func(receipt client.Receipt) {
-			s.checkRestored(&site, receipt, snapshot, service, before, gatewayAddress)
+			s.checkRestored(&site, receipt, info, gatewayAddress)
 		})
 	if err != nil {
 		return fail(err)
 	}
 	defer func() {
 		receipt := finish()
-		s.checkRestored(&site, receipt, snapshot, service, before, gatewayAddress)
+		s.checkRestored(&site, receipt, info, gatewayAddress)
 	}()
 	s.reporter.Log("info", "helper", fmt.Sprintf("隧道配置完成，用时 %.1f 秒", time.Since(setupStarted).Seconds()))
 
@@ -318,115 +302,51 @@ func (s *Supervisor) tunnel(ctx context.Context, session *client.Session) SiteRe
 	return site
 }
 
-// startHelper starts the privileged helper through osascript, authenticates
-// its socket and configures the network. finish waits for the helper, reads
-// its restore receipt and removes the temporary socket.
+// startHelper starts the privileged helper, authenticates it and configures
+// the network. finish waits for the helper, reads its restore receipt and
+// releases the endpoint; it is safe to call once, on every path.
 func (s *Supervisor) startHelper(ctx context.Context, cfg client.NetworkConfig, onAuthorized func(), onCleanup func(client.Receipt)) (helper *client.BufferedConn, finish func() client.Receipt, err error) {
-	dir, err := os.MkdirTemp("", "motionvpn-")
+	conn, token, receiptPath, wait, cleanup, err := launchHelper(ctx, s.reporter, s.cfg.HelperPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	socketPath := filepath.Join(dir, "control.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		os.RemoveAll(dir)
-		return nil, nil, err
-	}
 
-	var tokenBytes [32]byte
-	if _, err := rand.Read(tokenBytes[:]); err != nil {
-		listener.Close()
-		os.RemoveAll(dir)
-		return nil, nil, err
-	}
-	token := hex.EncodeToString(tokenBytes[:])
-
-	executable := s.cfg.HelperPath
-	if executable == "" {
-		executable, err = os.Executable()
-		if err != nil {
-			listener.Close()
-			os.RemoveAll(dir)
-			return nil, nil, err
-		}
-	}
-	command := shellQuote(executable) + " --helper " + shellQuote(socketPath) + " " + shellQuote(token)
-	script := "do shell script " + appleScriptString(command) + " with administrator privileges"
-
-	cmd := exec.Command("/usr/bin/osascript", "-e", script)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	s.reporter.Progress("请在系统弹窗中授权创建 VPN 隧道", "helper", nil)
-	if err := cmd.Start(); err != nil {
-		listener.Close()
-		os.RemoveAll(dir)
-		return nil, nil, err
-	}
-
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-
-	// finish always runs once the helper was started, and closes the socket.
+	var (
+		once      sync.Once
+		receipt   client.Receipt
+		receiptMu sync.Mutex
+	)
 	finish = func() client.Receipt {
-		listener.Close()
-		select {
-		case <-done:
-		case <-time.After(45 * time.Second):
-			cmd.Process.Kill()
-			<-done
-		}
-		var receipt client.Receipt
-		if data, err := os.ReadFile(socketPath + ".receipt"); err == nil {
-			json.Unmarshal(data, &receipt)
-		}
-		os.RemoveAll(dir)
+		once.Do(func() {
+			conn.Close()
+			if wait != nil {
+				_ = wait()
+			}
+			receiptMu.Lock()
+			receipt = readReceipt(receiptPath)
+			receiptMu.Unlock()
+			cleanup()
+		})
+		receiptMu.Lock()
+		defer receiptMu.Unlock()
 		return receipt
 	}
-	fail := func(err error) (*client.BufferedConn, func() client.Receipt, error) {
-		finish()
-		return nil, nil, err
-	}
 
-	accepted := make(chan net.Conn, 1)
-	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
-			select {
-			case accepted <- conn:
-			case <-ctx.Done():
-				conn.Close()
-			}
+	authorized := false
+	failClean := func(err error) (*client.BufferedConn, func() client.Receipt, error) {
+		r := finish()
+		if authorized && onCleanup != nil {
+			onCleanup(r)
 		}
-	}()
-
-	var conn net.Conn
-	select {
-	case conn = <-accepted:
-	case <-done:
-		return fail(fmt.Errorf("授权辅助程序未启动：%s", stderr.String()))
-	case <-ctx.Done():
-		cmd.Process.Kill()
-		return fail(ctx.Err())
-	case <-time.After(90 * time.Second):
-		cmd.Process.Kill()
-		return fail(fmt.Errorf("管理员授权超时"))
+		return nil, nil, err
 	}
 
 	disconnect := context.AfterFunc(ctx, func() { conn.Close() })
-	cleanup := func() {
-		disconnect()
-		conn.Close()
-	}
-	// failClean tears the helper down and reports the restore receipt, for
-	// failures after the helper may have changed the host network.
-	failClean := func(err error) (*client.BufferedConn, func() client.Receipt, error) {
-		cleanup()
-		receipt := finish()
-		if onCleanup != nil {
-			onCleanup(receipt)
+	defer func() {
+		if err != nil {
+			disconnect()
 		}
-		return nil, nil, err
-	}
+	}()
 
 	conn.SetDeadline(time.Now().Add(90 * time.Second))
 	reader := bufio.NewReader(conn)
@@ -435,6 +355,7 @@ func (s *Supervisor) startHelper(ctx context.Context, cfg client.NetworkConfig, 
 		return failClean(fmt.Errorf("helper authentication failed"))
 	}
 	s.reporter.Log("info", "helper", "管理员 helper 已通过握手，开始配置 utun、DNS 和路由")
+	authorized = true
 	if onAuthorized != nil {
 		onAuthorized()
 	}
@@ -446,35 +367,46 @@ func (s *Supervisor) startHelper(ctx context.Context, cfg client.NetworkConfig, 
 	if err != nil {
 		return failClean(err)
 	}
-	var receipt client.Receipt
-	if err := json.Unmarshal(line, &receipt); err != nil || !receipt.Ready {
-		return failClean(fmt.Errorf("网络配置失败：%s", receipt.Error))
+	var ready client.Receipt
+	if err := json.Unmarshal(line, &ready); err != nil || !ready.Ready {
+		return failClean(fmt.Errorf("网络配置失败：%s", ready.Error))
 	}
 	conn.SetDeadline(time.Time{})
-	s.reporter.Connected(receipt.Interface)
+	s.reporter.Connected(ready.Interface)
 
-	// The helper keeps the socket open while it forwards traffic.
-	wait := finish
+	// The helper keeps the endpoint open while it forwards traffic.
+	release := finish
 	finish = func() client.Receipt {
-		cleanup()
-		return wait()
+		disconnect()
+		return release()
 	}
 	return &client.BufferedConn{Conn: conn, Reader: reader}, finish, nil
 }
 
+// readReceipt reads the helper's restore receipt, if it wrote one.
+func readReceipt(path string) client.Receipt {
+	var receipt client.Receipt
+	if path == "" {
+		return receipt
+	}
+	if data, err := os.ReadFile(path); err == nil {
+		json.Unmarshal(data, &receipt)
+	}
+	return receipt
+}
+
 // checkRestored compares the host network with the snapshot taken before the
 // tunnel and reports what could not be confirmed.
-func (s *Supervisor) checkRestored(site *SiteResult, receipt client.Receipt, snapshot client.Snapshot, service string, before map[string]string, gateway string) {
+func (s *Supervisor) checkRestored(site *SiteResult, receipt client.Receipt, info client.Info, gateway string) {
 	site.CleanupConfirmed = receipt.Clean
 	site.NetworkRestoreFailures = receipt.Failures
 	site.HelperError = receipt.Error
 
-	after, err := client.TakeSnapshot(client.SystemRun, service)
-	site.ParentStateRestored = err == nil && reflect.DeepEqual(after, snapshot)
+	after, err := client.TakeSnapshot(client.SystemRun, info.Service)
+	site.ParentStateRestored = err == nil && reflect.DeepEqual(after, info.Before)
 
-	route, err := client.SystemRun("/sbin/route", "-n", "get", gateway)
-	fields := client.RouteFields(route)
-	site.OuterRouteRestored = err == nil && fields["gateway"] == before["gateway"] && fields["interface"] == before["interface"]
+	router, iface, err := client.OuterRoute(client.SystemRun, gateway)
+	site.OuterRouteRestored = err == nil && router == info.Router && iface == info.Interface
 
 	level, message := "info", "网络恢复核对完成"
 	if !site.CleanupConfirmed || !site.ParentStateRestored || !site.OuterRouteRestored {
@@ -561,10 +493,4 @@ func tunnelDNS(raw json.RawMessage) ([]string, error) {
 		dns = dns[:4]
 	}
 	return dns, nil
-}
-
-func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'" }
-
-func appleScriptString(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }

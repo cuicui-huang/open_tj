@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"fmt"
-	"golang.zx2c4.com/wireguard/tun"
 	"io"
 	"net"
 	"os"
 	"sync"
 	"time"
+
+	"golang.zx2c4.com/wireguard/tun"
 )
 
 type Receipt struct {
@@ -22,63 +22,6 @@ type Receipt struct {
 	Failures  []string `json:"network_restore_failures,omitempty"`
 }
 
-func RunHelper(ctx context.Context, path, token string) (resultErr error) {
-	if os.Geteuid() != 0 {
-		return fmt.Errorf("需要管理员授权")
-	}
-	c, e := net.Dial("unix", path)
-	if e != nil {
-		return e
-	}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(15 * time.Second))
-	fmt.Fprintln(c, token)
-	r := bufio.NewReader(c)
-	line, e := ReadLine(r, 65536)
-	if e != nil {
-		return e
-	}
-	var cfg NetworkConfig
-	if e = json.Unmarshal(line, &cfg); e != nil {
-		return e
-	}
-	c.SetDeadline(time.Time{})
-	device, e := tun.CreateTUN("utun", 1280)
-	if e != nil {
-		json.NewEncoder(c).Encode(Receipt{Error: e.Error(), Clean: true})
-		return e
-	}
-	defer device.Close()
-	name, e := device.Name()
-	if e != nil {
-		return e
-	}
-	network := Network{Run: SystemRun, Config: cfg}
-	defer func() {
-		failures := network.Cleanup()
-		receipt := Receipt{Clean: len(failures) == 0, Failures: failures}
-		if resultErr != nil {
-			receipt.Error = resultErr.Error()
-		}
-		data, _ := json.Marshal(receipt)
-		os.WriteFile(path+".receipt", data, 0644)
-	}()
-	if e = network.Configure(name); e != nil {
-		json.NewEncoder(c).Encode(Receipt{Error: e.Error()})
-		return e
-	}
-	if e = json.NewEncoder(c).Encode(Receipt{Ready: true, Interface: name}); e != nil {
-		return e
-	}
-	err := helperPump(ctx, c, r, device, network.Verify, func() {
-		// Remove owned routes while their utun interface still exists.
-		network.Routes.Rollback()
-	})
-	if err == io.EOF || err == context.Canceled {
-		return nil
-	}
-	return err
-}
 func helperPump(ctx context.Context, c net.Conn, r io.Reader, d tun.Device, verify func() error, beforeClose ...func()) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -157,6 +100,67 @@ func helperPump(ctx context.Context, c net.Conn, r io.Reader, d tun.Device, veri
 	c.SetDeadline(time.Time{})
 	return e
 }
+
+// runHelper configures the network and relays frames until ctx ends.
+// The platform RunHelper dials the supervisor and calls it.
+func runHelper(ctx context.Context, c net.Conn, receiptPath, ifname string) (resultErr error) {
+	c.SetDeadline(time.Now().Add(15 * time.Second))
+	r := bufio.NewReader(c)
+	line, e := ReadLine(r, 65536)
+	if e != nil {
+		return e
+	}
+	var cfg NetworkConfig
+	if e = json.Unmarshal(line, &cfg); e != nil {
+		return e
+	}
+	c.SetDeadline(time.Time{})
+	device, e := tun.CreateTUN(ifname, 1280)
+	if e != nil {
+		writeReceipt(receiptPath, Receipt{Error: e.Error(), Clean: true})
+		json.NewEncoder(c).Encode(Receipt{Error: e.Error(), Clean: true})
+		return e
+	}
+	defer device.Close()
+	name, e := device.Name()
+	if e != nil {
+		return e
+	}
+	network := Network{Run: SystemRun, Config: cfg}
+	defer func() {
+		failures := network.Cleanup()
+		receipt := Receipt{Clean: len(failures) == 0, Failures: failures}
+		if resultErr != nil {
+			receipt.Error = resultErr.Error()
+		}
+		data, _ := json.Marshal(receipt)
+		os.WriteFile(receiptPath, data, 0o644)
+	}()
+	if e = network.Configure(name); e != nil {
+		json.NewEncoder(c).Encode(Receipt{Error: e.Error()})
+		return e
+	}
+	if e = json.NewEncoder(c).Encode(Receipt{Ready: true, Interface: name}); e != nil {
+		return e
+	}
+	err := helperPump(ctx, c, r, device, network.Verify, func() {
+		// Remove owned routes while their utun interface still exists.
+		network.Routes.Rollback()
+	})
+	if err == io.EOF || err == context.Canceled {
+		return nil
+	}
+	return err
+}
+
+func writeReceipt(path string, receipt Receipt) {
+	if path == "" {
+		return
+	}
+	data, _ := json.Marshal(receipt)
+	_ = os.WriteFile(path, data, 0o644)
+}
+
 func VerifyToken(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }

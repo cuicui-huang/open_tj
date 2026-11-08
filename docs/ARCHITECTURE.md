@@ -3,7 +3,7 @@
 ## 总览
 
 ```text
-apps/desktop/   macOS：Go 单一进程 + MyGo 原生 UI + 提权 helper 子进程
+apps/desktop/   桌面：Go 单一进程 + MyGo 原生 UI + 提权 helper 子进程（macOS/Windows）
 apps/android/   Android：Kotlin/Compose + VpnService，独立实现
 testdata/       Go/Kotlin 共用协议样例
 ```
@@ -20,7 +20,7 @@ testdata/       Go/Kotlin 共用协议样例
 | `apps/desktop` (`main`) | 程序入口、`--helper`/`--diagnose` 分发、MyGo 应用生命周期、窗口与菜单栏接线 |
 | `internal/app` | `Controller` 状态机、主窗口/日志/菜单栏视图、托盘图标、格式化函数 |
 | `internal/vpn` | 登录、隧道编排、重连与睡眠策略、对 UI 的 `Reporter` 接口 |
-| `internal/client` | 网关协议、TLS、helper 握手、utun、路由/DNS/代理事务、流量统计、转发桥、诊断探针 |
+| `internal/client` | 网关协议、TLS、helper 握手、TUN、平台网络事务（`network_darwin.go` / `network_windows.go`）、流量统计、转发桥、诊断探针 |
 | `internal/credentials` | 钥匙串读写与旧版条目迁移 |
 | `internal/settings` | 用户偏好 JSON（账号名、认证方式、窗口布局） |
 | `internal/logging` | JSONL 诊断日志（2 MB 轮转） |
@@ -38,10 +38,12 @@ MyGo 的 `App.Run` 在主 goroutine 上运行事件循环，窗口内容由
 
 1. `Controller.Connect` 读取表单、保存偏好与钥匙串，启动 `vpn.Supervisor.Run`。
 2. 监督器登录网关，读取隧道配置，进行网络预检（出口必须是物理网卡）。
-3. 通过 `osascript ... with administrator privileges` 以 root 重新执行**同一份
-   应用二进制**并带 `--helper <socket> <token>`；`main` 在初始化 MyGo 之前处理该
-   参数，因此特权进程不会加载或显示 UI。
-4. helper 创建 utun，事务式配置路由、DNS、代理与 IPv6，写回执；监督器开始转发。
+3. 提权运行**同一份应用二进制**的 `--helper <endpoint> <token> <receipt>` 模式；
+   `main` 在初始化 MyGo 之前处理该参数，因此特权进程不会加载或显示 UI：
+   - macOS：`osascript ... with administrator privileges` + Unix socket
+   - Windows：`ShellExecute("runas")` + 本地回环 TCP + 随机令牌
+4. helper 创建 TUN（macOS `utun`、Windows Wintun），事务式配置路由、DNS、
+   代理与 IPv6，写回执；监督器开始转发。
 5. 断开、睡眠或失败时，helper 回滚网络并写 `cleanup_confirmed`；监督器核对
    父进程网络快照与外层路由后，才允许自动重连。
 6. 管理员授权和 utun 配置可能耗时数十秒，期间监督器按网关心跳间隔发送
@@ -82,6 +84,8 @@ MyGo 的 `App.Run` 在主 goroutine 上运行事件循环，窗口内容由
 - `internal/app`：状态机、日志边界与筛选、格式化；视图用 `ui.NewTester`
   渲染并点击，不启动窗口。
 - `internal/settings`、`internal/logging`、`internal/credentials` 的独立单测。
+- `client` 中平台无关的 Windows 解析逻辑（路由、DNS、IPv6 绑定输出）在 macOS 上
+  也运行单测；CI 额外对 Windows/Linux 的 amd64/arm64 执行 `go vet`。
 
 真实 VPN 登录、管理员授权与网络修改不在单元测试内，见
 [发布验收](RELEASE_CHECKLIST.md)。

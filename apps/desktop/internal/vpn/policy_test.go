@@ -45,12 +45,6 @@ func TestRetryPolicy(t *testing.T) {
 	}
 }
 
-func TestAuthorizationScriptCompiles(t *testing.T) {
-	command := shellQuote("/tmp/中文 path/OpenTJ") + " --helper " + shellQuote("/tmp/sock 'quoted'") + " " + shellQuote("token")
-	script := "do shell script " + appleScriptString(command) + " with administrator privileges"
-	runOSACompile(t, script)
-}
-
 func TestGatewayTerminationStopsRetry(t *testing.T) {
 	site := &SiteResult{
 		HostNetworkModified: true,

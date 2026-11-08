@@ -14,6 +14,9 @@ Open TJ 的 macOS 客户端运行依赖如下；版本以 apps/desktop/go.mod �
 | golang.org/x/net | BSD-3-Clause | licenses/x-net-LICENSE.txt |
 | golang.zx2c4.com/wintun (Windows tun) | MIT | licenses/wintun-LICENSE.txt |
 
+The Windows build ships `wintun.dll` (amd64/arm64) from the Wintun project next
+to the executable; Wintun is licensed under the MIT license above.
+
 应用不使用 WireGuard 隧道协议。旧 Python 代理依赖的 gVisor 未进入当前发行目标。Go 编译器运行库的许可证见 licenses/go-LICENSE.txt。上述许可证随 app 的 Contents/Resources 一同分发（`resources` 配置会把 `licenses` 复制进应用包）。
 
 本项目采用 MIT 许可证，见根目录 LICENSE。第三方组件仍遵循各自许可证。

@@ -2,7 +2,7 @@
   "name": "Open TJ",
   "slug": "open-tj",
   "identifier": "local.motionvpn.prototype",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "copyright": "© Open TJ contributors",
   "license": "MIT",
   "out": "../../build",

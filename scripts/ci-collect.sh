@@ -27,14 +27,11 @@ case "$OS" in
     cp "$SRC"/*.dmg "$OUT/OpenTJ-$VERSION-$DIR.dmg"
     ;;
   windows)
-    found=0
-    for file in "$SRC"/*.exe; do
-      [ -e "$file" ] || continue
-      found=1
-      name="$(basename "$file" .exe | tr ' ' '-')"
-      cp "$file" "$OUT/$name-$VERSION-$DIR.exe"
-    done
-    [ "$found" = 1 ] || { echo "No .exe in $SRC" >&2; exit 1; }
+    [ -s "$SRC/Open TJ.exe" ] || { echo "Missing $SRC/Open TJ.exe" >&2; exit 1; }
+    [ -s "$SRC/wintun.dll" ] || { echo "Missing $SRC/wintun.dll" >&2; exit 1; }
+    zip_path="$(pwd)/$OUT/OpenTJ-$VERSION-$DIR.zip"
+    (cd "$SRC" && zip -q -r "$zip_path" \
+      "Open TJ.exe" wintun.dll LICENSE THIRD_PARTY_NOTICES.md licenses)
     ;;
   linux)
     shopt -s nullglob

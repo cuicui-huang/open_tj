@@ -40,6 +40,9 @@ func main() {
 	if headless(os.Args) {
 		return
 	}
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
 
 	logsDir, err := mygo.App.Path(mygo.PathLogs)
 	if err != nil {
@@ -113,6 +116,12 @@ func main() {
 	})
 	mygo.App.OnActivate(func(visible bool) {
 		if !visible && window != nil {
+			window.Show()
+			window.Focus()
+		}
+	})
+	mygo.App.OnSecondInstance(func([]string, string) {
+		if window != nil {
 			window.Show()
 			window.Focus()
 		}
@@ -191,10 +200,10 @@ func alreadyInMenuBar() {
 // headless runs the modes that never show a window and reports whether it
 // handled the command line.
 func headless(args []string) bool {
-	if len(args) == 4 && args[1] == "--helper" {
+	if len(args) == 5 && args[1] == "--helper" {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
-		if err := client.RunHelper(ctx, args[2], args[3]); err != nil {
+		if err := client.RunHelper(ctx, args[2], args[3], args[4]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
