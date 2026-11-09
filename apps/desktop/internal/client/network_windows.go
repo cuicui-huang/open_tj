@@ -30,9 +30,30 @@ type Snapshot struct {
 	AutoConfigURL string          `json:"auto_config_url,omitempty"`
 }
 
+// powershell runs a script and folds PowerShell's own error stream into the
+// text it returns. Without that, a failing cmdlet leaves only "exit status 1",
+// which says nothing about which command failed or why — and the user, who
+// cannot open the tunnel to see anything else, has nothing to report.
 func powershell(run Runner, script string) (string, error) {
-	return run("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	wrapped := "$ErrorActionPreference = 'Stop'; try { " + script +
+		" } catch { Write-Output ('__PSError__ ' + $_.Exception.Message); exit 1 }"
+	out, err := run("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", wrapped)
+	const marker = "__PSError__ "
+	if i := strings.Index(out, marker); i >= 0 {
+		message := strings.TrimSpace(out[i+len(marker):])
+		if message == "" {
+			message = "PowerShell 命令失败，但没有给出原因"
+		}
+		return out, &PowerShellError{Message: message}
+	}
+	return out, err
 }
+
+// PowerShellError is a cmdlet that failed, with the message it gave. The
+// message is what the user sees, so it is kept verbatim.
+type PowerShellError struct{ Message string }
+
+func (e *PowerShellError) Error() string { return e.Message }
 
 func psQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
@@ -121,7 +142,7 @@ func (n *Network) Configure(name string) error {
 	if !regexp.MustCompile(`^[A-Za-z0-9 _-]{1,64}$`).MatchString(name) ||
 		c.Interface == "" || strings.ContainsAny(c.Interface, "\x00\r\n|") ||
 		strings.EqualFold(c.Interface, name) ||
-		c.Before.Service != c.Interface || len(c.Before.IPv6) == 0 {
+		c.Before.Service != c.Interface {
 		return fmt.Errorf("invalid network interface configuration")
 	}
 	for _, ip := range append([]string{c.IP, c.Gateway, c.Router}, c.DNS...) {

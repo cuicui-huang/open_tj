@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- Windows 网络配置失败时显示 PowerShell 自己给出的原因，不再只有 `exit status 1`。
+- 移除对 IPv6 绑定快照非空的强制要求：关闭 IPv6 或网卡命名特殊的机器会因此直接失败。
 - 修复 Windows 无法连接：隧道网卡被配置成 `/32` 前缀，在 Windows 上等于没有子网，
   随后的 `Set-NetIPInterface` 会以 `GetNetworkParams` 报错失败。改为 `/24`。
   macOS 用 `255.255.255.255` 可行是因为 `utun` 是点对点接口，Windows 的 Wintun 不是。
