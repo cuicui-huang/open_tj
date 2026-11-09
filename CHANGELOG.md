@@ -2,6 +2,10 @@
 
 ## 未发布
 
+- 修复 Windows 无法连接：隧道网卡被配置成 `/32` 前缀，在 Windows 上等于没有子网，
+  随后的 `Set-NetIPInterface` 会以 `GetNetworkParams` 报错失败。改为 `/24`。
+  macOS 用 `255.255.255.255` 可行是因为 `utun` 是点对点接口，Windows 的 Wintun 不是。
+
 - 移除 Linux 构建。macOS 与 Windows 都提供完整连接；网络配置按平台拆分，
   不再保留 Linux 桩。
 - 桌面界面改为侧栏导航（概览、账号、日志、设置），使用 MyGo 的毛玻璃窗口、
