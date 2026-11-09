@@ -6,7 +6,6 @@ import (
 	"image/color"
 	"image/png"
 	"log"
-	"runtime"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -37,20 +36,15 @@ func NewTray(ctrl *Controller) (*Tray, error) {
 	}
 	t.tray = tray
 
-	if runtime.GOOS == "linux" {
-		// AppIndicator shows a menu and reports no clicks.
+	t.tray.OnClick(t.Toggle)
+	t.tray.OnRightClick(func() {
+		if t.panel != nil {
+			t.panel.Close()
+		}
 		t.tray.SetMenu(t.menu())
-	} else {
-		t.tray.OnClick(t.Toggle)
-		t.tray.OnRightClick(func() {
-			if t.panel != nil {
-				t.panel.Close()
-			}
-			t.tray.SetMenu(t.menu())
-			defer t.tray.SetMenu(nil)
-			t.tray.PopUpMenu()
-		})
-	}
+		defer t.tray.SetMenu(nil)
+		t.tray.PopUpMenu()
+	})
 	t.Refresh()
 	return t, nil
 }
@@ -62,15 +56,17 @@ func (t *Tray) Toggle() {
 		return
 	}
 	t.panel = mygo.NewFlyout(mygo.FlyoutOptions{
-		Tray:      t.tray,
-		Placement: mygo.PlacementBottom,
-		Gap:       4,
-		Width:     300,
-		Height:    330,
-		Focusable: true,
-		Shadow:    true,
-		Popover:   true,
-		Content:   ui.View(t.ctrl.ViewMenu),
+		Tray:         t.tray,
+		Placement:    mygo.PlacementBottom,
+		Gap:          6,
+		Width:        320,
+		Height:       372,
+		Focusable:    true,
+		Shadow:       true,
+		Popover:      true,
+		CornerRadius: 16,
+		Vibrancy:     mygo.VibrancyPopover,
+		Content:      ui.View(t.ctrl.ViewMenu),
 	})
 	t.panel.OnClosed(func() { t.panel = nil })
 }

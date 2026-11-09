@@ -33,12 +33,6 @@ case "$OS" in
     (cd "$SRC" && zip -q -r "$zip_path" \
       "Open TJ.exe" wintun.dll LICENSE THIRD_PARTY_NOTICES.md licenses)
     ;;
-  linux)
-    shopt -s nullglob
-    files=("$SRC"/*.tar.gz "$SRC"/*.deb)
-    [ ${#files[@]} -gt 0 ] || { echo "No Linux packages in $SRC" >&2; exit 1; }
-    cp "${files[@]}" "$OUT/"
-    ;;
   *)
     echo "Unsupported platform: $PLATFORM" >&2
     exit 1

@@ -1,10 +1,22 @@
 # Windows 使用与实现说明
 
-Windows 10/11（arm64 / amd64）从 0.4.0 起支持连接，属于实验性功能。下载
-`OpenTJ-<版本>-windows-<架构>.zip`（免安装包），解压后运行其中的
-`Open TJ.exe`；首次连接会弹出 UAC 管理员授权。`wintun.dll` 必须与 exe 保持同目录。
+Windows 10/11（arm64 / amd64）从 0.4.0 起支持连接，与 macOS 使用同一套网关协议和心跳。
+下载 `OpenTJ-<版本>-windows-<架构>.zip`，解压后运行其中的 `Open TJ.exe`；
+首次连接会弹出 UAC 管理员授权。
 
-包内已带 `wintun.dll`。exe 与 DLL 均未签名，SmartScreen 可能提示“未知发布者”，
+## 单个可执行文件
+
+`wintun.dll` 内嵌在 exe 里，无需另行下载或放置。首次启动时程序把它写到 exe 同目录，
+之后每次启动发现已是最新就不再写。
+
+之所以要写出来而不是一直留在内存：Windows 的 DLL 加载器只在**应用程序目录**和
+`System32` 里找 `wintun.dll`（`LOAD_LIBRARY_SEARCH_APPLICATION_DIR`），
+无法从内存或其他目录加载。所以单文件指的是"发布时只需一个 exe"，
+运行后同目录会多出一个 `wintun.dll`，请勿删除。
+
+写入用"先写 `.new` 再 rename"的方式，避免崩溃留下半个文件后下次启动误用。
+
+exe 与解压出的 DLL 均未签名，SmartScreen 可能提示"未知发布者"，
 需要手动允许运行。正式分发前应配置代码签名证书。
 
 ## 工作方式

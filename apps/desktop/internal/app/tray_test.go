@@ -25,13 +25,13 @@ func TestTrayIconsArePNG(t *testing.T) {
 
 func TestMenuView(t *testing.T) {
 	c, q := newTestController(t, &memStore{}, nil)
-	tt := ui.NewTester(c.ViewMenu, 300, 330)
+	tt := ui.NewTester(c.ViewMenu, 320, 372)
 	if !tt.HasText("打开主窗口") || !tt.HasText("连接 VPN") {
 		t.Fatalf("menu texts %q", tt.Texts())
 	}
 	c.active = true
 	c.Connecting()
-	c.Connected("utun3")
+	c.Connected("utun3", []string{"10.5.0.1"})
 	q.Drain()
 	tt.Frame()
 	if !tt.HasText("断开 VPN") {

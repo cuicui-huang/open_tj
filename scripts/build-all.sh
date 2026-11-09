@@ -9,8 +9,6 @@ targets=(
   darwin/amd64
   windows/arm64
   windows/amd64
-  linux/arm64
-  linux/amd64
 )
 for target in "${targets[@]}"; do
   printf '\n=== %s ===\n' "$target"

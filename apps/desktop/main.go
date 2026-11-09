@@ -25,16 +25,24 @@ import (
 )
 
 const (
-	windowWidth     = 420
-	windowHeight    = 720
-	expandedWidth   = 940
-	expandedHeight  = 650
-	minimumWidth    = 380
-	minimumHeight   = 620
+	// The app has four short pages, so the window is sized for them rather
+	// than for a dashboard: small enough to sit beside an editor, large enough
+	// that the overview needs no scrolling at the overview's densest.
+	windowWidth     = 660
+	windowHeight    = 470
+	minimumWidth    = 580
+	minimumHeight   = 400
 	backgroundClose = "Open TJ 会继续在菜单栏运行"
 )
 
 func main() {
+	// The tunnel device loads wintun.dll from beside the executable, so the
+	// file has to exist before either process needs it: the helper is the one
+	// that creates the device, and it starts before the UI does anything.
+	if err := client.PrepareTunnelDevice(); err != nil {
+		log.Println("wintun:", err)
+	}
+
 	// The privileged helper and the diagnostic probe must run before MyGo
 	// starts: the helper is root, and neither needs a user interface.
 	if headless(os.Args) {
@@ -93,16 +101,6 @@ func main() {
 				tray.Refresh()
 			}
 		},
-		LayoutChanged: func(showLog bool) {
-			if window == nil {
-				return
-			}
-			if showLog {
-				window.SetContentSize(expandedWidth, expandedHeight)
-			} else {
-				window.SetContentSize(windowWidth, windowHeight)
-			}
-		},
 		OpenMain: func() {
 			if window != nil {
 				window.Show()
@@ -144,13 +142,16 @@ func main() {
 
 	mygo.App.WhenReady(func() {
 		window = mygo.NewWindow(mygo.WindowOptions{
-			Title:     "Open TJ",
-			Width:     windowWidth,
-			Height:    windowHeight,
-			MinWidth:  minimumWidth,
-			MinHeight: minimumHeight,
-			StateKey:  "main",
-			Content:   ui.View(ctrl.ViewMain),
+			Title:           "Open TJ",
+			Width:           windowWidth,
+			Height:          windowHeight,
+			MinWidth:        minimumWidth,
+			MinHeight:       minimumHeight,
+			StateKey:        "main",
+			TitleBarStyle:   mygo.TitleBarHidden,
+			Vibrancy:        mygo.VibrancySidebar,
+			BackgroundColor: "light-dark(#ffffff, #141416)",
+			Content:         ui.View(ctrl.ViewMain),
 		})
 		window.OnClose(func(event *mygo.CloseEvent) {
 			if quitting {
@@ -175,9 +176,9 @@ func main() {
 		mygo.Power.OnSuspend(ctrl.Sleep)
 		mygo.Power.OnResume(ctrl.Wake)
 
-		if ctrl.ShowLog {
-			window.SetContentSize(expandedWidth, expandedHeight)
-		}
+		// Connect on launch when the user asked for it and saved an account.
+		// Runs on the window's thread, as Connect changes UI state.
+		ctrl.MaybeAutoConnect()
 	})
 
 	if err := mygo.App.Run(); err != nil {

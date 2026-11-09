@@ -13,5 +13,12 @@
     "../../licenses",
     "../../LICENSE",
     "../../THIRD_PARTY_NOTICES.md"
+  ],
+  "resourcesExclude": [
+    "**/wintun.dll",
+    "**/icon.png",
+    "**/licenses/**",
+    "**/LICENSE",
+    "**/THIRD_PARTY_NOTICES.md"
   ]
 }

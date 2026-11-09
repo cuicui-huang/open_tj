@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -90,8 +91,9 @@ func newTestController(t *testing.T, store credentials.Store, runner Runner) (*C
 	t.Helper()
 	q := &postQueue{}
 	c := New(Config{
-		Store: store,
-		Post:  q.Post,
+		Store:     store,
+		Post:      q.Post,
+		Supported: func() bool { return true },
 		NewRunner: func(vpn.Config, vpn.Reporter) Runner {
 			if runner == nil {
 				return newFakeRunner()
@@ -99,6 +101,10 @@ func newTestController(t *testing.T, store credentials.Store, runner Runner) (*C
 			return runner
 		},
 		SavePrefs: func(settings.Preferences) error { return nil },
+		// The real calls need the app's main thread, which a test has not:
+		// they would block forever.
+		SetOpenAtLogin: func(bool) error { return nil },
+		OpenAtLogin:    func() bool { return false },
 	})
 	t.Cleanup(func() {
 		if c.cancel != nil {
@@ -196,7 +202,7 @@ func TestReporterUpdatesStateAndTraffic(t *testing.T) {
 	if c.Status() != "正在连接" {
 		t.Fatalf("status %q", c.Status())
 	}
-	c.Connected("utun7")
+	c.Connected("utun7", []string{"10.5.0.1"})
 	q.Drain()
 	if !c.IsConnected() || c.ConnectedAt().IsZero() || !strings.Contains(c.Detail(), "utun7") {
 		t.Fatalf("connected=%v detail=%q", c.IsConnected(), c.Detail())
@@ -273,11 +279,13 @@ func TestLogBoundsFilterAndExpansion(t *testing.T) {
 func TestViewRendersAndConnects(t *testing.T) {
 	runner := newFakeRunner()
 	c, q := newTestController(t, &memStore{}, runner)
+	c.cfg.Prefs.Username = "student"
 	c.Account().Username = "student"
 	c.Account().Password = "secret"
+	c.choosePage(pageOverview)
 
-	tt := ui.NewTester(c.ViewMain, 420, 600)
-	if !tt.HasText("未连接") || !tt.HasText("网络流量") {
+	tt := ui.NewTester(c.ViewMain, 860, 640)
+	if !tt.HasText("未连接") || !tt.HasText("连通性") {
 		t.Fatalf("initial texts %q", tt.Texts())
 	}
 	if err := tt.Click("连接 VPN"); err != nil {
@@ -289,19 +297,19 @@ func TestViewRendersAndConnects(t *testing.T) {
 		t.Fatalf("connecting texts %q", tt.Texts())
 	}
 
-	c.Connected("utun7")
+	c.Connected("utun7", []string{"10.5.0.1"})
 	c.Traffic(client.TrafficSample{DownloadBPS: 4096, UploadBPS: 1280, DownloadBytes: 8192})
 	q.Drain()
 	tt.Frame()
 	if !tt.HasText("已连接") {
 		t.Fatalf("connected texts %q", tt.Texts())
 	}
-	if !tt.HasText("4.00") || !tt.HasText("1.25") {
+	if !tt.HasText("4") || !tt.HasText("1.25") {
 		t.Fatalf("rate texts %q", tt.Texts())
 	}
 
 	c.AddLog("warning", "backend", "retry test")
-	c.ShowLog = true
+	c.ShowLogToggle()
 	q.Drain()
 	tt.Frame()
 	if !tt.HasText("日志") || !tt.HasText("retry test") {
@@ -314,10 +322,13 @@ func TestViewRendersAndConnects(t *testing.T) {
 		t.Fatalf("filtered texts still show entry: %q", tt.Texts())
 	}
 	c.LogLevel = "all"
-	tt.SetSize(940, 650)
+	tt.SetSize(860, 640)
 	q.Drain()
 	tt.Frame()
 
+	// Disconnect lives on the overview, which the log page covers.
+	c.ShowLogToggle()
+	tt.Frame()
 	if err := tt.Click("断开"); err != nil {
 		t.Fatal(err)
 	}
@@ -329,5 +340,345 @@ func TestViewRendersAndConnects(t *testing.T) {
 	}
 	if !strings.Contains(c.LogText(), "收到断开请求") {
 		t.Fatalf("disconnect not logged: %q", c.LogText())
+	}
+}
+
+func TestProgressShowsProbeCard(t *testing.T) {
+	c, q := newTestController(t, &memStore{}, nil)
+	c.cfg.Prefs.Username = "student"
+	c.Account().Username = "student"
+	c.Account().Password = "secret"
+	c.choosePage(pageOverview)
+
+	view := ui.NewTester(c.ViewMain, 940, 700)
+	if !view.HasText("连接后自动检测校园网连通性") {
+		t.Fatalf("idle overview %q", view.Texts())
+	}
+	if view.HasText("IPv4 · 同济大学") {
+		t.Fatal("sidebar still shows the hardcoded footer")
+	}
+
+	c.Progress("连接诊断：…", "diagnostics", []client.ProbeResult{{
+		URL:         "https://xlcp.tongji.edu.cn/user/web-v2",
+		SystemDNSMS: 11, TCPMS: 24, TLSMS: 58, Status: 200,
+		Redirects: []client.ProbeResult{{
+			URL: "https://ids.tongji.edu.cn/login", TotalMS: 40, Status: 200,
+		}},
+	}})
+	q.Drain()
+	view.Frame()
+	if !view.HasText("连通性") || !view.HasText("xlcp.tongji.edu.cn") {
+		t.Fatalf("probe card %q", view.Texts())
+	}
+	if !view.HasText("ids.tongji.edu.cn") {
+		t.Fatalf("redirect not shown: %q", view.Texts())
+	}
+	if view.HasText("连接后自动检测校园网连通性") {
+		t.Fatal("empty state survived a real probe")
+	}
+}
+
+func TestSettingsTogglesPersist(t *testing.T) {
+	var saved settings.Preferences
+	c, _ := newTestController(t, &memStore{}, nil)
+	c.cfg.SavePrefs = func(p settings.Preferences) error { saved = p; return nil }
+	c.cfg.SetOpenAtLogin = func(on bool) error {
+		if on {
+			return nil
+		}
+		return nil
+	}
+
+	c.SetOpenAtLogin(true)
+	if !saved.OpenAtLogin || c.LoginError() != "" {
+		t.Fatalf("login item %+v err %q", saved, c.LoginError())
+	}
+	c.cfg.SetOpenAtLogin = func(bool) error { return errLogin }
+	c.SetOpenAtLogin(false)
+	if !saved.OpenAtLogin || c.LoginError() == "" {
+		t.Fatalf("a failed change was saved: %+v %q", saved, c.LoginError())
+	}
+
+	c.SetNotifyOnConnect(false)
+	if saved.NotifyOnConnect() {
+		t.Fatal("notify toggle did not persist")
+	}
+	c.SetAutoConnect(true)
+	if !saved.AutoConnect {
+		t.Fatal("auto connect toggle did not persist")
+	}
+
+	tt := ui.NewTester(c.ViewMain, 940, 700)
+	c.choosePage(pageSettings)
+	tt.Frame()
+	if !tt.HasText("开机时启动") || !tt.HasText("连接成功后发送通知") || !tt.HasText("启动时自动连接") {
+		t.Fatalf("settings page %q", tt.Texts())
+	}
+	if !tt.HasText(c.LoginError()) {
+		t.Fatalf("login error not shown: %q", tt.Texts())
+	}
+}
+
+var errLogin = loginError("系统拒绝了这个登录项")
+
+type loginError string
+
+func (e loginError) Error() string { return string(e) }
+
+func TestFirstLaunchOpensAccount(t *testing.T) {
+	blank, _ := newTestController(t, &memStore{}, nil)
+	if blank.Page != pageAccount {
+		t.Fatalf("page %q, want the account page", blank.Page)
+	}
+	tt := ui.NewTester(blank.ViewMain, 860, 640)
+	if !tt.HasText("首次使用？用你的学号和校园网密码登录") {
+		t.Fatalf("first run %q", tt.Texts())
+	}
+
+	known := New(Config{
+		Prefs: settings.Preferences{Username: "student"},
+		Post:  func(fn func()) { fn() },
+	})
+	if known.Page != pageOverview {
+		t.Fatalf("page %q, want the overview", known.Page)
+	}
+}
+
+func TestAutoConnectNeedsSavedAccount(t *testing.T) {
+	runner := newFakeRunner()
+	c, _ := newTestController(t, &memStore{}, runner)
+	c.cfg.Prefs.AutoConnect = true
+	c.MaybeAutoConnect()
+	if c.Active() {
+		t.Fatal("auto connected without a saved account")
+	}
+	if !strings.Contains(c.LogText(), "已跳过") {
+		t.Fatalf("skip not logged: %q", c.LogText())
+	}
+
+	c.account.Remember = true
+	c.account.Username = "student"
+	c.account.Password = "secret"
+	c.MaybeAutoConnect()
+	if !c.Active() {
+		t.Fatalf("refused detail=%q log=%q nil=%v", c.Detail(), c.LogText(), c.cfg.Supported == nil)
+	}
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("auto connect did not start: detail=%q log=%q", c.Detail(), c.LogText())
+	}
+}
+
+// A stopped session must not leave its probe results on screen: they measured
+// the tunnel that just went down.
+func TestProbesClearedWhenSessionEnds(t *testing.T) {
+	c, q := newTestController(t, &memStore{}, nil)
+	c.account.Username = "u"
+	c.account.Password = "p"
+	c.Connect()
+	q.Drain()
+	c.Connected("utun7", []string{"10.5.0.1"})
+	c.Progress("连接诊断：", "diagnostics", []client.ProbeResult{
+		{URL: "https://xlcp.tongji.edu.cn/x", Status: 200, SystemDNSMS: 11, TCPMS: 24, TLSMS: 58},
+	})
+	q.Drain()
+	if probes, _ := c.Probes(); len(probes) != 1 {
+		t.Fatalf("connected probes %d, want 1", len(probes))
+	}
+	c.Disconnect()
+	q.Drain()
+	waitFor(t, q, func() bool { return !c.Active() })
+
+	if probes, _ := c.Probes(); len(probes) != 0 {
+		t.Fatalf("probes survived the session: %d", len(probes))
+	}
+	c.Page = pageOverview
+	tt := ui.NewTester(c.ViewMain, 860, 640)
+	tt.Frame()
+	if tt.HasText("xlcp.tongji.edu.cn") {
+		t.Fatalf("stale probe still shown: %q", tt.Texts())
+	}
+}
+
+// The log search finds an entry by its component and level too, as the copied
+// text shows them.
+func TestLogSearchMatchesComponentAndLevel(t *testing.T) {
+	c, q := newTestController(t, &memStore{}, nil)
+	c.AddLog("error", "network", "helper 恢复网络超时")
+	c.AddLog("info", "app", "开始连接")
+	q.Drain()
+
+	c.LogSearch = "network"
+	if got := c.FilteredEntries(); len(got) != 1 || got[0].Component != "network" {
+		t.Fatalf("search by component: %d entries", len(got))
+	}
+	c.LogSearch = "error"
+	if got := c.FilteredEntries(); len(got) != 1 || got[0].Level != "error" {
+		t.Fatalf("search by level: %d entries", len(got))
+	}
+	c.LogSearch = "  开始  "
+	if got := c.FilteredEntries(); len(got) != 1 {
+		t.Fatalf("search with spaces: %d entries", len(got))
+	}
+	c.LogSearch = ""
+	if got := c.FilteredEntries(); len(got) != 2 {
+		t.Fatalf("empty search: %d entries, want 2", len(got))
+	}
+}
+
+// Launching must not read the keychain: that makes macOS ask for the login
+// password before the user did anything.
+func TestLaunchDoesNotReadKeychain(t *testing.T) {
+	store := &countingStore{}
+	c := New(Config{
+		Store:          store,
+		Prefs:          settings.Preferences{Username: "student", Remember: true},
+		Post:           func(fn func()) { fn() },
+		SavePrefs:      func(settings.Preferences) error { return nil },
+		SetOpenAtLogin: func(bool) error { return nil },
+		OpenAtLogin:    func() bool { return false },
+		Supported:      func() bool { return true },
+	})
+	if store.loads != 0 {
+		t.Fatalf("keychain read %d times at launch", store.loads)
+	}
+	if !c.NeedsCredential() {
+		t.Fatal("the page cannot tell that a password is saved")
+	}
+	// Connecting asks for it, since the password is what it needs.
+	c.Connect()
+	if store.loads != 1 {
+		t.Fatalf("keychain read %d times on connect, want 1", store.loads)
+	}
+	if c.account.Password != "from-keychain" {
+		t.Fatalf("password %q, want the stored one", c.account.Password)
+	}
+}
+
+type countingStore struct {
+	mu    sync.Mutex
+	loads int
+}
+
+func (s *countingStore) Load() (credentials.Credentials, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loads++
+	return credentials.Credentials{Username: "student", Password: "from-keychain"}, true, nil
+}
+func (s *countingStore) Save(credentials.Credentials) error { return nil }
+func (s *countingStore) Delete() error                      { return nil }
+
+// The login item shows what the system has, not what the app last saved.
+func TestOpenAtLoginFollowsSystem(t *testing.T) {
+	system := false
+	c := New(Config{
+		Prefs:          settings.Preferences{OpenAtLogin: true},
+		Post:           func(fn func()) { fn() },
+		SavePrefs:      func(settings.Preferences) error { return nil },
+		SetOpenAtLogin: func(on bool) error { system = on; return nil },
+		OpenAtLogin:    func() bool { return system },
+		Supported:      func() bool { return true },
+	})
+	if c.OpenAtLogin() {
+		t.Fatal("preference leaked: the system has no login item")
+	}
+	c.SetOpenAtLogin(true)
+	if !c.OpenAtLogin() {
+		t.Fatal("switch does not follow the system after enabling")
+	}
+	c.SetOpenAtLogin(false)
+	if c.OpenAtLogin() {
+		t.Fatal("switch does not follow the system after disabling")
+	}
+}
+
+// A reconnect drops the tunnel, so the probes measured through it are stale
+// there too.
+func TestProbesClearedWhenReconnecting(t *testing.T) {
+	c, q := newTestController(t, &memStore{}, nil)
+	c.account.Username = "u"
+	c.account.Password = "p"
+	c.Connect()
+	q.Drain()
+	c.Connected("utun7", []string{"10.5.0.1"})
+	c.Progress("连接诊断：", "diagnostics", []client.ProbeResult{
+		{URL: "https://ping0.cc", Status: 200, TCPMS: 30, TLSMS: 60},
+	})
+	q.Drain()
+	c.Reconnecting(5)
+	q.Drain()
+	if probes, _ := c.Probes(); len(probes) != 0 {
+		t.Fatalf("probes survived the drop: %d", len(probes))
+	}
+	if c.Checking() {
+		t.Fatal("still reports a check in progress")
+	}
+}
+
+// A failed keychain read must be recoverable from the page, and the reason
+// must be visible: otherwise the user can only retype the password.
+func TestKeychainFailureIsVisibleAndRetryable(t *testing.T) {
+	store := &failingStore{}
+	c := New(Config{
+		Store:          store,
+		Prefs:          settings.Preferences{Username: "student", Remember: true},
+		Post:           func(fn func()) { fn() },
+		SavePrefs:      func(settings.Preferences) error { return nil },
+		SetOpenAtLogin: func(bool) error { return nil },
+		OpenAtLogin:    func() bool { return false },
+		Supported:      func() bool { return true },
+	})
+
+	c.LoadCredentials()
+	if c.CredentialError() == "" {
+		t.Fatal("failure not reported to the page")
+	}
+	if !c.NeedsCredential() {
+		t.Fatal("no retry offered after a failed read")
+	}
+	c.Page = pageAccount
+	tt := ui.NewTester(c.ViewMain, 860, 640)
+	tt.Frame()
+	if !tt.HasText("从钥匙串载入密码") {
+		t.Fatalf("no way to retry: %q", tt.Texts())
+	}
+
+	store.ok = true
+	c.LoadCredentials()
+	if c.CredentialError() != "" {
+		t.Fatalf("error kept after a good read: %q", c.CredentialError())
+	}
+	if c.account.Password != "from-keychain" {
+		t.Fatalf("password %q", c.account.Password)
+	}
+}
+
+type failingStore struct{ ok bool }
+
+func (s *failingStore) Load() (credentials.Credentials, bool, error) {
+	if !s.ok {
+		return credentials.Credentials{}, false, errors.New("用户取消了钥匙串访问")
+	}
+	return credentials.Credentials{Username: "student", Password: "from-keychain"}, true, nil
+}
+func (s *failingStore) Save(credentials.Credentials) error { return nil }
+func (s *failingStore) Delete() error                      { return nil }
+
+func TestMissingCredentialNamesTheGap(t *testing.T) {
+	c, _ := newTestController(t, &memStore{}, nil)
+	c.account.Password = "secret"
+	if got := c.MissingCredential(); got != "还缺用户名" {
+		t.Fatalf("missing %q", got)
+	}
+	c.account.Username = "student"
+	c.account.Password = ""
+	if got := c.MissingCredential(); got != "还缺密码" {
+		t.Fatalf("missing %q", got)
+	}
+	c.account.Password = "secret"
+	if got := c.MissingCredential(); got != "" {
+		t.Fatalf("missing %q", got)
 	}
 }

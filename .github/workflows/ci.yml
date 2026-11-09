@@ -28,7 +28,7 @@ jobs:
       - name: Cross-platform vet
         run: |
           cd apps/desktop
-          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
+          for target in windows/amd64 windows/arm64; do
             GOOS="${target%/*}" GOARCH="${target#*/}" go vet ./...
           done
 
@@ -48,10 +48,6 @@ jobs:
             dir: windows-arm64
           - platform: windows/amd64
             dir: windows-amd64
-          - platform: linux/arm64
-            dir: linux-arm64
-          - platform: linux/amd64
-            dir: linux-amd64
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0

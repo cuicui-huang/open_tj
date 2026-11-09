@@ -30,6 +30,28 @@ func TestLoadDefaultsAndSave(t *testing.T) {
 	}
 }
 
+func TestOldFileKeepsNotificationsOn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "preferences.json")
+	old := []byte("{\n  \"username\": \"student\",\n  \"auth_method\": \"LDAP3\",\n  \"remember\": true\n}\n")
+	if err := os.WriteFile(path, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := Load(path)
+	if !p.NotifyOnConnect() {
+		t.Fatal("an old file, with no notify field, should notify")
+	}
+	if p.OpenAtLogin || p.AutoConnect {
+		t.Fatalf("old file opted into %+v", p)
+	}
+	p.DisableNotify = true
+	if err := Save(path, p); err != nil {
+		t.Fatal(err)
+	}
+	if loaded := Load(path); loaded.NotifyOnConnect() {
+		t.Fatal("an explicit opt-out did not survive a reload")
+	}
+}
+
 func TestLoadIgnoresBrokenFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "preferences.json")
 	if err := os.WriteFile(path, []byte("{broken"), 0o600); err != nil {

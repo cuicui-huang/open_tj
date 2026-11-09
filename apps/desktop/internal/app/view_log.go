@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -9,15 +10,15 @@ import (
 // levelNames maps the filter's labels to the levels entries keep.
 var levelNames = []struct{ label, value string }{
 	{"全部", "all"},
-	{"Info", "info"},
-	{"Warning", "warning"},
-	{"Error", "error"},
+	{"信息", "info"},
+	{"警告", "warning"},
+	{"错误", "error"},
 }
 
 func (c *Controller) viewLog(ctx *ui.Context) {
-	t := ctx.Theme()
+	p := paletteFor(ctx.Theme())
 	// The list stops following its end when the user scrolls up; mirror that
-	// in the checkbox.
+	// in the toggle.
 	if c.FollowLogs && !c.LogList.FollowEnd {
 		c.FollowLogs = false
 	}
@@ -25,85 +26,89 @@ func (c *Controller) viewLog(ctx *ui.Context) {
 	c.LogList.Key = func(row int) any { return entries[row].ID }
 	warnings, errors := c.Counts()
 
-	ui.Column(ctx).Fill().Background(t.Background).Children(func() {
-		ui.Row(ctx).Padding(14).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Text(ctx, "日志").Bold()
+	ui.Column(ctx).Fill().Children(func() {
+		ui.Row(ctx).Padding(20, 24, 12, 24).Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Text(ctx, "日志").FontSize(20).FontWeight(680)
 			if warnings > 0 {
-				ui.Text(ctx, fmt.Sprintf("⚠ %d", warnings)).FontSize(11).TextColor(t.Warning)
+				ui.Badge(ctx, fmt.Sprintf("%d 警告", warnings)).TextColor(ctx.Theme().Warning)
 			}
 			if errors > 0 {
-				ui.Text(ctx, fmt.Sprintf("✕ %d", errors)).FontSize(11).TextColor(t.Danger)
+				ui.Badge(ctx, fmt.Sprintf("%d 错误", errors)).Background(ctx.Theme().Danger).TextColor(ui.Hex("#ffffff"))
 			}
 			ui.Spacer(ctx)
-			if ui.Checkbox(ctx, &c.FollowLogs, "跟随").Changed() {
+			ui.Text(ctx, "跟随").FontSize(12).TextColor(p.muted)
+			if ui.Switch(ctx, &c.FollowLogs).Label("跟随最新日志").Changed() {
 				c.LogList.FollowEnd = c.FollowLogs
 			}
-			ui.Button(ctx.Key("copy-log"), "复制").Label("复制日志").
-				OnClick(func() { mygo.Clipboard.WriteText(c.LogText()) })
-			ui.Button(ctx.Key("clear-log"), "清空").Label("清空界面日志").OnClick(c.ClearLog)
+			iconButton(ctx, "doc.on.doc", iconCopy, 15, p.muted, "复制日志").
+				OnClick(func() {
+					mygo.Clipboard.WriteText(c.LogText())
+					ctx.Toast("日志已复制")
+				})
+			iconButton(ctx, "trash", iconTrash, 15, p.muted, "清空界面日志").OnClick(c.ClearLog)
 		})
-		ui.Row(ctx).Padding(0, 14, 12, 14).Gap(8).Children(func() {
-			level := c.LogLevel
-			label := "全部"
-			for _, option := range levelNames {
-				if option.value == level {
-					label = option.label
-				}
-			}
-			chosen := label
+
+		ui.Row(ctx).Padding(0, 24, 14, 24).Gap(8).AlignItems(ui.Center).Children(func() {
 			labels := make([]string, len(levelNames))
+			index := 0
 			for i, option := range levelNames {
 				labels[i] = option.label
-			}
-			if ui.Select(ctx, &chosen, labels).Changed() {
-				for _, option := range levelNames {
-					if option.label == chosen {
-						c.SetLogLevel(option.value)
-					}
+				if option.value == c.LogLevel {
+					index = i
 				}
 			}
-			ui.TextInput(ctx, &c.LogSearch).Placeholder("搜索消息").Grow(1)
+			if ui.Segmented(ctx, &index, labels...).Label("日志级别").Changed() && index >= 0 && index < len(levelNames) {
+				c.SetLogLevel(levelNames[index].value)
+			}
+			ui.SearchField(ctx, &c.LogSearch).Placeholder("搜索消息").Grow(1)
 		})
-		ui.Divider(ctx)
+
 		ui.List(ctx, &c.LogList, len(entries), func(i int) {
-			c.viewLogEntry(ctx, t, entries[i])
+			c.viewLogEntry(ctx, entries[i])
 		}).Grow(1).Children(func() {
 			if len(entries) == 0 {
-				ui.Text(ctx, "暂无匹配日志").TextColor(t.TextMuted).Padding(18)
+				ui.Column(ctx).Padding(48, 24).Gap(6).AlignItems(ui.Center).Children(func() {
+					symbol(ctx, "doc.text", iconDoc, 28, p.faint)
+					ui.Text(ctx, "暂无匹配日志").TextColor(p.muted)
+				})
 			}
 		})
 	})
 }
 
-func (c *Controller) viewLogEntry(ctx *ui.Context, t *ui.Theme, entry LogEntry) {
+func (c *Controller) viewLogEntry(ctx *ui.Context, entry LogEntry) {
+	t := ctx.Theme()
+	p := paletteFor(t)
 	expanded := c.Expanded[entry.ID]
 	ui.Column(ctx).Children(func() {
-		ui.Row(ctx).Padding(9, 12).Gap(8).AlignItems(ui.Start).Children(func() {
-			ui.Text(ctx, entry.Time.Format("15:04:05")).FontSize(11).
-				TextColor(t.TextMuted).Width(59)
-			ui.Text(ctx, LevelLabel(entry.Level)).FontSize(11).
-				TextColor(levelColor(t, entry.Level)).Width(38)
-			ui.Text(ctx, entry.Component).FontSize(11).
-				TextColor(t.TextMuted).Width(54).NoWrap()
-			message := entry.Message
-			lineLimit(ui.Text(ctx, message).FontSize(11).Selectable().Grow(1), entry)
+		row := ui.Row(ctx).Padding(9, 24).Gap(10).AlignItems(ui.Center)
+		if row.Hovered() {
+			row.Background(p.hover)
+		}
+		row.Children(func() {
+			ui.Text(ctx, entry.Time.Format("15:04:05")).FontSize(12).
+				TextColor(p.faint).Width(62).Shrink(0)
+			ui.Badge(ctx, LevelLabel(entry.Level)).TextColor(levelColor(t, entry.Level)).Shrink(0)
+			ui.Text(ctx, entry.Component).FontSize(12).TextColor(p.muted).Width(64).NoWrap().Shrink(0)
+			message := ui.Text(ctx, entry.Summary()).FontSize(12).Selectable().Grow(1)
 			if entry.HasDetails() {
-				chevron := "▸"
+				message.NoWrap()
+			}
+			if entry.HasDetails() {
+				chevron := "chevron.right"
 				if expanded {
-					chevron = "▾"
+					chevron = "chevron.down"
 				}
-				ui.Button(ctx.Key(entry.ID), chevron).
-					Label("展开或收起完整详情").
-					Tooltip("展开或收起完整详情").
+				iconButton(ctx, chevron, nil, 12, p.muted, "展开或收起完整详情").
 					OnClick(func() { c.ToggleExpanded(entry.ID) })
 			}
 		})
 		if expanded {
-			ui.Text(ctx, entry.Message).FontSize(11).Selectable().
-				Padding(10).Background(t.Surface).Radius(6).
-				Margin(0, 12, 9, 12)
+			ui.Text(ctx, entry.Message).FontSize(12).Selectable().
+				Padding(12).Background(p.card).Radius(10).
+				Margin(0, 24, 10, 24)
 		}
-		ui.Divider(ctx)
+		ui.Box(ctx).Height(1).Background(p.hairline).Margin(0, 24)
 	})
 }
 
@@ -116,12 +121,4 @@ func levelColor(t *ui.Theme, level string) ui.Color {
 	default:
 		return t.TextMuted
 	}
-}
-
-// lineLimit keeps a collapsed entry to its first line.
-func lineLimit(element ui.Element, entry LogEntry) ui.Element {
-	if entry.HasDetails() {
-		return element.NoWrap()
-	}
-	return element
 }

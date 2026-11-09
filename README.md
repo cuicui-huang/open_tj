@@ -24,7 +24,7 @@ macOS 客户端使用 Go 与 [MyGo](https://github.com/egoist/mygo) 原生 UI �
 
 Windows 10/11 版本可在 [Releases](https://github.com/cuicui-huang/open_tj/releases) 下载
 `OpenTJ-*-windows-*.zip`，解压后以管理员权限运行其中的 `Open TJ.exe`；当前为
-未签名免安装包，SmartScreen 可能提示。Windows 支持为 0.4.0 新增的实验功能，详见 [Windows 指南](docs/WINDOWS.md)。
+未签名免安装包，SmartScreen 可能提示。Windows 与 macOS 使用同一套网关协议，详见 [Windows 指南](docs/WINDOWS.md)。
 
 macOS 构建尚未经 Apple 公证。如被系统拦截，尝试打开后，到「系统设置 → 隐私与安全性」
 选择「仍要打开」。两平台的 Release 安装包均可直接下载，无需 GitHub 账号。
@@ -64,7 +64,7 @@ go tool mygo dev      # 编辑 .go 文件后自动重启
 ```sh
 make test             # go test -race ./... + go vet ./...
 make build            # 当前架构的 .app
-make build-all        # 六个目标：macOS/Windows/Linux × arm64/amd64
+make build-all        # 四个目标：macOS/Windows × arm64/amd64
 make package          # macOS 双架构 Universal ZIP 到 dist/
 ```
 
@@ -72,7 +72,7 @@ make package          # macOS 双架构 Universal ZIP 到 dist/
 Developer ID 时由 MyGo 完成签名。
 
 macOS 客户端不使用 Swift、Xcode 或 WebView；界面由 MyGo 在 Metal 上绘制。
-Windows 版本可连接（实验性，详见 docs/WINDOWS.md）；Linux 版本仅用于界面预览。
+Windows 版本可连接，详见 docs/WINDOWS.md。不再提供 Linux 版本。
 
 Android（需要 JDK 17 和 Android SDK）：
 

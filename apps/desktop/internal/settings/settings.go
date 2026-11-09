@@ -17,6 +17,9 @@ const DefaultMethod = "LDAP3"
 var Methods = []string{"LDAP3", "LDAP2", "LDAP", "default_method_localdb"}
 
 // Preferences is the JSON stored in the user data directory.
+//
+// DisableNotify is inverted on purpose: a file written before the setting
+// existed has no field, and a missing field must mean notifications stay on.
 type Preferences struct {
 	Username                 string  `json:"username,omitempty"`
 	Method                   string  `json:"auth_method,omitempty"`
@@ -24,7 +27,14 @@ type Preferences struct {
 	BackgroundCloseExplained bool    `json:"background_close_explained,omitempty"`
 	ShowLog                  bool    `json:"show_log,omitempty"`
 	SplitWidth               float32 `json:"split_width,omitempty"`
+	OpenAtLogin              bool    `json:"open_at_login,omitempty"`
+	DisableNotify            bool    `json:"disable_notify,omitempty"`
+	AutoConnect              bool    `json:"auto_connect,omitempty"`
 }
+
+// NotifyOnConnect reports whether a successful connection should notify.
+// An old file, which never stored the choice, notifies.
+func (p Preferences) NotifyOnConnect() bool { return !p.DisableNotify }
 
 // Normalize fills the defaults a missing or old file leaves empty.
 func (p *Preferences) Normalize() {

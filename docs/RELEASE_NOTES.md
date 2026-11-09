@@ -9,4 +9,4 @@ Open TJ macOS Universal 构建，支持 Apple Silicon 和 Intel，最低系统�
 升级前请退出旧版本。不同系统版本、Intel 真机及实际网络环境的兼容性仍需验证。
 
 
-本次同时提供 Windows 与 Linux 的 arm64/amd64 构建。Windows 10/11 版本为 0.4.0 新增的实验性连接支持（需要管理员权限，未签名）；Linux 版本仍仅用于界面预览。
+同时提供 Windows 10/11 的 arm64/amd64 构建，连接与 macOS 使用同一套网关协议（需要管理员权限，未签名）。不再提供 Linux 版本。

@@ -45,3 +45,4 @@ __pycache__/
 /apps/desktop/.mygo/
 /apps/desktop/build/
 mygo_windows_*.syso
+.alma-snapshots

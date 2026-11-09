@@ -42,8 +42,10 @@ type Reporter interface {
 	Connecting()
 	// Progress reports a step, optionally with connectivity probes.
 	Progress(message, component string, probes []client.ProbeResult)
-	// Connected reports that the tunnel is up.
-	Connected(iface string)
+	// Connected reports that the tunnel is up, with the interface it created
+	// and the DNS resolvers the gateway handed to it. A manual connectivity
+	// check compares the system resolver with these.
+	Connected(iface string, dns []string)
 	// Reconnecting reports a wait before the next attempt.
 	Reconnecting(seconds int)
 	// Sleeping reports that the machine is asleep and the session is closed.
@@ -372,7 +374,7 @@ func (s *Supervisor) startHelper(ctx context.Context, cfg client.NetworkConfig, 
 		return failClean(fmt.Errorf("网络配置失败：%s", ready.Error))
 	}
 	conn.SetDeadline(time.Time{})
-	s.reporter.Connected(ready.Interface)
+	s.reporter.Connected(ready.Interface, cfg.DNS)
 
 	// The helper keeps the endpoint open while it forwards traffic.
 	release := finish

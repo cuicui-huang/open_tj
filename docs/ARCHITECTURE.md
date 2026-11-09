@@ -55,13 +55,21 @@ MyGo 的 `App.Run` 在主 goroutine 上运行事件循环，窗口内容由
 
 ### 界面
 
-- 主窗口：状态头、连接时长、流量卡片（上下行速率、60 秒折线、峰值、累计）、
-  连接表单、连接/断开状态。
-- 日志侧栏：级别筛选、搜索、跟随、展开详情、复制、清空；`ui.List` 虚拟滚动，
+- 主窗口为侧栏导航，四页：概览、账号、日志、设置（`⌘1`–`⌘4`；非 macOS 显示
+  `Ctrl+1`–`Ctrl+4`）。
+- 概览：状态头与连接时长、连通性卡片、流量卡片（上下行速率、60 秒折线、峰值、
+  累计）、会话信息（账号、认证方式、网关、隧道接口）。
+- 连通性卡片读 supervisor 的探针结果：每行主机名、DNS/TCP/TLS 耗时与状态点，
+  失败原因经 `ExplainProbe` 翻译成可操作的中文。连接后自动检测一次，也可手动
+  重新检测（`RefreshProbes`）。
+- 账号页：凭据表单；连接期间锁定。首次启动（没有保存用户名）直接落在这里。
+- 日志页：级别筛选、搜索、跟随、展开详情、复制、清空；`ui.List` 虚拟滚动，
   上限 2000 条。
+- 设置页：开机自启（`mygo.App.SetOpenAtLogin`）、连接成功通知
+  （`mygo.NewNotification`）、启动时自动连接，以及版本与网关信息。
 - 菜单栏：`NewTray` 模板图标 + `NewFlyout` 面板，显示速率与连接/断开/打开/退出。
-- `⌘L` 切换日志侧栏；关闭窗口改为隐藏，应用继续驻留菜单栏；退出前先断开并
-  等待网络恢复完成。
+- `⌘L` 在概览与日志之间切换；关闭窗口改为隐藏，应用继续驻留菜单栏；退出前先
+  断开并等待网络恢复完成。
 
 ### 兼容标识
 
@@ -85,7 +93,7 @@ MyGo 的 `App.Run` 在主 goroutine 上运行事件循环，窗口内容由
   渲染并点击，不启动窗口。
 - `internal/settings`、`internal/logging`、`internal/credentials` 的独立单测。
 - `client` 中平台无关的 Windows 解析逻辑（路由、DNS、IPv6 绑定输出）在 macOS 上
-  也运行单测；CI 额外对 Windows/Linux 的 amd64/arm64 执行 `go vet`。
+  也运行单测；CI 额外对 Windows 的 amd64/arm64 执行 `go vet`。
 
 真实 VPN 登录、管理员授权与网络修改不在单元测试内，见
 [发布验收](RELEASE_CHECKLIST.md)。
@@ -97,4 +105,4 @@ MyGo 的 `App.Run` 在主 goroutine 上运行事件循环，窗口内容由
 - helper 仍是每次授权的子进程，不是已安装的 LaunchDaemon；若改用
   ServiceManagement，需要独立的安装、签名验证与升级设计。
 - MyGo 版本锁定在 `apps/desktop/go.mod`，升级单独提交并跑完整测试；原生 UI
-  不依赖 WebView，未来也可扩展到 Windows/Linux，但网络配置目前仅实现 macOS。
+  不依赖 WebView。网络配置实现 macOS 与 Windows，不再提供 Linux 构建。
