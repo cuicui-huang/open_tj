@@ -238,12 +238,23 @@ func (n *Network) configureAdapter(name string, c NetworkConfig) error {
 		psQuote(name))); err != nil {
 		return err
 	}
-	script := fmt.Sprintf(`New-NetIPAddress -InterfaceAlias %s -IPAddress %s -PrefixLength 32 -ErrorAction Stop | Out-Null
+	// Wintun's adapter is a normal Ethernet-style interface, not a
+	// point-to-point one: a /32 leaves it without a subnet, and the next
+	// command fails with GetNetworkParams telling you nothing. Give it the
+	// /24 its address sits in. The routes added later are what send traffic
+	// through the tunnel, so the prefix here only defines the on-link subnet.
+	script := fmt.Sprintf(`New-NetIPAddress -InterfaceAlias %s -IPAddress %s -PrefixLength %d -ErrorAction Stop | Out-Null
 Set-NetIPInterface -InterfaceAlias %s -AddressFamily IPv4 -NlMtuBytes 1280 -ErrorAction Stop`,
-		psQuote(name), c.IP, psQuote(name))
+		psQuote(name), c.IP, tunnelPrefix, psQuote(name))
 	_, err := powershell(n.Run, script)
 	return err
 }
+
+// tunnelPrefix is the prefix the tunnel adapter is configured with. The
+// gateway hands out a single address, so the subnet is chosen to contain it:
+// a /24 keeps the adapter valid without claiming a range the gateway might
+// route elsewhere.
+const tunnelPrefix = 24
 
 func tunnelIndex(run Runner, name string) (string, error) {
 	out, err := powershell(run, fmt.Sprintf(`(Get-NetAdapter -Name %s -ErrorAction Stop).ifIndex`, psQuote(name)))
